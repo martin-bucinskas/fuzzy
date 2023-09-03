@@ -1,0 +1,20 @@
+data:
+  - id: shellShockCheck
+    description: Check for ShellShock vulnerability
+    cves:
+      - CVE-2014-6271
+    values:
+      - "() { 0; }; touch /tmp/test.shellshock1.fail;"
+      - "() { _; } >_[$($())] { touch /tmp/test.shellshock2.fail; }"
+
+  - id: juniperScreenOSAuthBackdoor
+    description: xxxx
+    cves:
+      - CVE-2015-7755
+    values:
+      - "<<< %s(un='%s') = %u"
+
+  - id: hayesPingOfDeath
+    description: Ping of death was +++ath0 which causes a dial-up modem to hang up
+    values:
+      - "+++ATH0"

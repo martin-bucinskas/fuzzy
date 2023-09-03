@@ -1,0 +1,27 @@
+data:
+  - id: fileInjection
+    description: Strings which can cause user to pull in files that should not be a part of a web server
+    values:
+      - "../../../../../../../../../../../../etc/passwd%00"
+      - "../../../../../../../../../../../../etc/hosts"
+
+  - id: msdosSpecialFileNames
+    description: Strings which are reserved characters in MSDOS/Windows
+    values:
+      - "CON"
+      - "PRN"
+      - "AUX"
+      - "CLOCK$"
+      - "NUL"
+      - "A:"
+      - "ZZ:"
+      - "COM1"
+      - "LPT1"
+      - "LPT2"
+      - "LPT3"
+      - "COM"
+      - "COM0"
+      - "COM1"
+      - "COM2"
+      - "COM3"
+      - "COM4"

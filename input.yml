@@ -1,0 +1,27 @@
+host: http://127.0.0.1:3001
+base_path: /api/v1
+paths:
+  - endpoint: /mytest
+    method: GET
+    expected_status: 200
+    expected_headers:
+      - name: Content-Type
+        value: application/json
+    expected_body: |
+      {
+        "hello": "world"
+      }
+    query_parameters:
+      - name: userId
+        fuzz: true
+      - name: type
+        fuzz: false
+        value: admin
+    headers:
+      - name: Accept
+        value: application/json
+        fuzz: false
+    body: |
+      {
+        "user": "{fuzz}"
+      }

