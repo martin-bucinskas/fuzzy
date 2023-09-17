@@ -8,7 +8,7 @@ data:
       - "() { _; } >_[$($())] { touch /tmp/test.shellshock2.fail; }"
 
   - id: juniperScreenOSAuthBackdoor
-    description: xxxx
+    description: A backdoor in the VPN implementation that allows a passive eavesdropper to decrypt traffic and a second backdoor that allows an attacker to bypass authentication in the SSH and Telnet daemons
     cves:
       - CVE-2015-7755
     values:

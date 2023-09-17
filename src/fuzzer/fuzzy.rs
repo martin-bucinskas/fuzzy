@@ -1,38 +1,67 @@
 use std::str::FromStr;
 use std::sync::Arc;
-use reqwest::{Client, Response, StatusCode};
+use async_trait::async_trait;
+use reqwest::{Client, Error, Response};
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
-use tokio::sync::{RwLock, Semaphore};
+use tokio::sync::Semaphore;
 use tokio::sync::mpsc::Sender;
 use url::{ParseError, Url};
+use uuid::uuid;
 use crate::domain::dictionary::FuzzyDictionary;
 use crate::domain::input::{FuzzyInput, HttpMethod, Path};
-use crate::fuzzer::metrics::Metrics;
 
 const FUZZING_PLACEHOLDER: &str = "%7Bfuzz%7D";
 
+#[async_trait]
+trait HttpClient {
+  async fn get(&self, url: &str) -> Result<Response, Error>;
+}
+
+#[async_trait]
+impl HttpClient for Client {
+  async fn get(&self, url: &str) -> Result<Response, Error> {
+    self.get(url).send().await
+  }
+}
+
+#[derive(Debug)]
 pub struct FuzzingFailure {
   network_error: Option<reqwest::Error>,
   status_code: Option<u16>,
   response: Option<Response>,
 }
 
+impl PartialEq for FuzzingFailure {
+  fn eq(&self, other: &Self) -> bool {
+    let neq = self.network_error.is_some() == other.network_error.is_some();
+    let seq = self.status_code == other.status_code;
+    let req = self.response.is_some() == other.response.is_some();
+
+    neq && seq && req
+  }
+}
+
 impl FuzzingFailure {
-  fn new(network_error: Option<reqwest::Error>, status_code: Option<u16>, response: Option<Response>) -> Self {
+  pub fn new(network_error: Option<reqwest::Error>, status_code: Option<u16>, response: Option<Response>) -> Self {
     Self {
       network_error,
       status_code,
       response,
     }
   }
+
+  pub fn failure_to_string(&self, url: FuzzedUrl) -> String {
+    format!("id: {}, url: {}, status_code: {:?}, response: {:?}, network_error: {:?}", url.id(), url.url(), self.status_code, self.response, self.network_error)
+  }
 }
 
+#[derive(PartialEq, Debug)]
 pub enum FuzzingResult {
   Success(FuzzedUrl),
   Failure(FuzzedUrl, FuzzingFailure),
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FuzzedUrl {
   url: String,
   description: String,
@@ -48,15 +77,15 @@ impl FuzzedUrl {
     }
   }
 
-  fn url(&self) -> &String {
+  pub fn url(&self) -> &String {
     &self.url
   }
 
-  fn description(&self) -> &String {
+  pub fn description(&self) -> &String {
     &self.description
   }
 
-  fn id(&self) -> &String {
+  pub fn id(&self) -> &String {
     &self.id
   }
 }
@@ -64,16 +93,14 @@ impl FuzzedUrl {
 #[derive(Clone)]
 pub struct Fuzzer {
   client: Client,
-  metrics: Arc<RwLock<Metrics>>,
   semaphore: Arc<Semaphore>,
   tx: Sender<FuzzingResult>,
 }
 
 impl Fuzzer {
-  pub fn new(metrics: Arc<RwLock<Metrics>>, num_of_concurrent_requests: usize, tx: Sender<FuzzingResult>) -> Self {
+  pub fn new(num_of_concurrent_requests: usize, tx: Sender<FuzzingResult>) -> Self {
     Fuzzer {
       client: Client::new(),
-      metrics,
       semaphore: Arc::new(Semaphore::new(num_of_concurrent_requests)),
       tx,
     }
@@ -123,27 +150,30 @@ impl Fuzzer {
   }
 
   async fn log_metrics(&self, response: Result<Response, reqwest::Error>, fuzzed_url: &FuzzedUrl, path: &Path) {
+    let id = uuid::Uuid::new_v4();
     match response {
       Ok(success) => {
-        let mut metrics = self.metrics.write().await;
+        // let mut metrics = self.metrics.write().await;
         if success.status().as_u16() != path.expected_status().clone() {
+          log::info!("Failure!!!! {}", id);
           let fuzzing_failure = FuzzingFailure::new(Option::None, Option::Some(success.status().as_u16()), Option::Some(success));
           self.tx.send(FuzzingResult::Failure(fuzzed_url.clone(), fuzzing_failure)).await.unwrap();
           // log::info!("\t➡️ received a non expected status code: {}\ndescription: ({}) {}\nurl: {}", success.status().as_u16(), fuzzed_url.id, fuzzed_url.description, fuzzed_url.url);
-          metrics.failed_requests += 1;
+          // metrics.failed_requests += 1;
         } else {
           self.tx.send(FuzzingResult::Success(fuzzed_url.clone())).await.unwrap();
-          metrics.successful_requests += 1;
+          // metrics.successful_requests += 1;
         }
-        metrics.total_requests += 1;
+        // metrics.total_requests += 1;
       }
       Err(err) => {
+        log::info!("Another Failure!!!! {}", id);
         let fuzzing_failure = FuzzingFailure::new(Option::Some(err), Option::None, Option::None);
         self.tx.send(FuzzingResult::Failure(fuzzed_url.clone(),fuzzing_failure)).await.unwrap();
         // log::info!("\t➡️ received an error whilst fuzzing: {}\ndescription: ({}) {}\nurl: {}", err, fuzzed_url.id, fuzzed_url.description, fuzzed_url.url);
-        let mut metrics = self.metrics.write().await;
-        metrics.failed_requests += 1;
-        metrics.total_requests += 1;
+        // let mut metrics = self.metrics.write().await;
+        // metrics.failed_requests += 1;
+        // metrics.total_requests += 1;
       }
     }
   }
@@ -189,17 +219,115 @@ impl Fuzzer {
     for handle in path_handles {
       handle.await.unwrap();
     }
+  }
+}
 
-    for path in input_data.paths() {
-      if let Ok(url) = self.generate_url(input_data, path) {
-        let fuzzed_urls = self.generate_fuzzed_urls(&url, dict);
-        for fuzzed_url in fuzzed_urls {
-          if path.method() == &HttpMethod::GET {
-            let response = self.make_request(&fuzzed_url, path).await;
-            self.log_metrics(response, &fuzzed_url, path).await;
-          }
-        }
-      }
+#[cfg(test)]
+mod tests {
+  use hyper::http;
+  use crate::domain::input::QueryParameter;
+  use super::*;
+
+  struct MockClient;
+
+  #[async_trait]
+  impl HttpClient for MockClient {
+    async fn get(&self, _url: &str) -> Result<Response, Error> {
+      Ok(Response::from(http::response::Response::new("test")))
     }
+  }
+
+  #[tokio::test]
+  async fn fuzzed_url_creation() {
+    let url = FuzzedUrl::new("https://example.com".into(), "desc".into(), "id".into());
+    assert_eq!(url.url(), "https://example.com");
+    assert_eq!(url.description(), "desc");
+    assert_eq!(url.id(), "id");
+  }
+
+  #[test]
+  fn fuzzing_failure_equality() {
+    let failure_1 = FuzzingFailure::new(None, Some(404), None);
+    let failure_2 = FuzzingFailure::new(None, Some(404), None);
+    let failure_3 = FuzzingFailure::new(None, Some(500), None);
+
+    assert_eq!(failure_1, failure_2);
+    assert_ne!(failure_1, failure_3);
+  }
+
+  #[test]
+  fn test_generate_url() {
+    let (tx, _rx) = tokio::sync::mpsc::channel::<FuzzingResult>(1);
+    let fuzzer = Fuzzer::new(1, tx);
+    let input_data = FuzzyInput::new("https://example.com".into(), "/base/path".into(), vec![]);
+    let path = Path::new(
+      "/test".into(),
+      HttpMethod::GET,
+      200,
+      vec![],
+      "".into(),
+      vec![],
+      vec![],
+      "".into()
+    );
+
+    let generated_url = fuzzer.generate_url(&input_data, &path);
+    assert!(generated_url.is_ok());
+
+    let actual_generated_url = generated_url.unwrap();
+    assert!(actual_generated_url.has_host());
+    assert_eq!(actual_generated_url.as_str(), "https://example.com/base/path/test?");
+  }
+
+  #[test]
+  fn test_generate_url_with_query_params() {
+    let (tx, _rx) = tokio::sync::mpsc::channel::<FuzzingResult>(1);
+    let fuzzer = Fuzzer::new(1, tx);
+    let input_data = FuzzyInput::new("https://example.com".into(), "/base/path".into(), vec![]);
+    let query_param_1 = QueryParameter::new("q1".into(), false, Option::Some("val1".into()));
+    let query_param_2 = QueryParameter::new("q2".into(), false, Option::Some("val2".into()));
+    let path = Path::new(
+      "/test".into(),
+      HttpMethod::GET,
+      200,
+      vec![],
+      "".into(),
+      vec![query_param_1, query_param_2],
+      vec![],
+      "".into()
+    );
+
+    let generated_url = fuzzer.generate_url(&input_data, &path);
+    assert!(generated_url.is_ok());
+
+    let actual_generated_url = generated_url.unwrap();
+    assert!(actual_generated_url.has_host());
+    assert_eq!(actual_generated_url.as_str(), "https://example.com/base/path/test?q1=val1&q2=val2");
+  }
+
+  #[test]
+  fn test_generate_url_with_fuzzed_query_param_values() {
+    let (tx, _rx) = tokio::sync::mpsc::channel::<FuzzingResult>(1);
+    let fuzzer = Fuzzer::new(1, tx);
+    let input_data = FuzzyInput::new("https://example.com".into(), "/base/path".into(), vec![]);
+    let query_param_1 = QueryParameter::new("q1".into(), false, Option::Some("val1".into()));
+    let query_param_2 = QueryParameter::new("q2".into(), true, Option::None);
+    let path = Path::new(
+      "/test".into(),
+      HttpMethod::GET,
+      200,
+      vec![],
+      "".into(),
+      vec![query_param_1, query_param_2],
+      vec![],
+      "".into()
+    );
+
+    let generated_url = fuzzer.generate_url(&input_data, &path);
+    assert!(generated_url.is_ok());
+
+    let actual_generated_url = generated_url.unwrap();
+    assert!(actual_generated_url.has_host());
+    assert_eq!(actual_generated_url.as_str(), "https://example.com/base/path/test?q1=val1&q2=%7Bfuzz%7D");
   }
 }

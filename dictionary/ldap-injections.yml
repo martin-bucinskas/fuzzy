@@ -1,0 +1,7 @@
+data:
+  - id: ldapBlindInjection
+    description: Can be used to exploit vulnerable Bouncy Castle LDAP certificate management solutions in Java
+    cves:
+      - CVE-2023-33201
+    values:
+      - "Client*)(userPassword=123"

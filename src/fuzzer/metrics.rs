@@ -35,5 +35,34 @@ impl Metrics {
     log::info!("ℹ️ successful requests: {}", self.successful_requests);
     log::info!("ℹ️ failed requests: {}", self.failed_requests);
     log::info!("ℹ️ throughput: {:.2} req/s", throughput);
+    log::info!("ℹ️ time: {:.2} s", elapsed_seconds);
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[tokio::test]
+  async fn test_metrics_initialization() {
+    let metrics_lock = Metrics::new();
+    let metrics = metrics_lock.read().await;
+
+    assert_eq!(metrics.successful_requests, 0);
+    assert_eq!(metrics.failed_requests, 0);
+    assert_eq!(metrics.total_requests, 0);
+  }
+
+  #[tokio::test]
+  async fn test_display() {
+    let metrics_arc = Metrics::new();
+    {
+      let mut metrics = metrics_arc.write().await;
+      metrics.successful_requests = 10;
+      metrics.failed_requests = 5;
+      metrics.total_requests = 15;
+    } // Drop the lock
+
+    metrics_arc.read().await.display();
   }
 }
